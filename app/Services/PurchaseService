@@ -1,0 +1,50 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Models\Product;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+
+class PurchaseService
+{
+    public function buy(int $productId): JsonResponse
+    {
+        return DB::transaction(function () use ($productId) {
+
+            $product = Product::where('id', $productId)
+                ->lockForUpdate() // SELECT ... FOR UPDATE
+                ->first();
+
+            if (! $product) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Product not found'
+                ], 404);
+            }
+
+            if ($product->stock < 1) {
+                return response()->json([
+                    'status' => 'failed',
+                    'message' => 'Out of stock'
+                ], 409);
+            }
+
+            // Kurangi stok
+            $product->stock -= 1;
+            $product->save();
+
+            DB::table('orders')->insert([
+                'product_id' => $product->id,
+                'status' => 'SUCCESS',
+                'created_at' => now()
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Purchase completed'
+            ]);
+        });
+    }
+}
